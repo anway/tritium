@@ -47,10 +47,13 @@ def idft(psis):
 def mv(psi):
    psis = np.reshape(psi, (8 * N, 8 * N))
    # T term
+   E_T = 0.
    for i_1, i_2 in np.ndindex(psis.shape):
-      psis[i_1, i_2] *= 1. / 2. * (np.dot(ks[i_1], ks[i_1]) + np.dot(ks[i_2], ks[i_2]))   
+      E_T += 1. / 2. * (np.dot(ks[i_1], ks[i_1]) + np.dot(ks[i_2], ks[i_2]))   
+   psis[i_1, i_2] *= E_T   
    psis = dft(psis)
    # U term
+   E_U = 0.
    for i_1, i_2 in np.ndindex(psis.shape):
       U_1 = -4. * math.pi / omega * \
             sum([charge * np.cos(np.dot(k_nu, pos - rs[i_1])) / np.dot(k_nu, k_nu) \
@@ -60,14 +63,16 @@ def mv(psi):
             sum([charge * np.cos(np.dot(k_nu, pos - rs[i_2])) / np.dot(k_nu, k_nu) \
                for charge, pos in zip(nuclei_q, nuclei_pos) for k_nu in ks if \
                not np.array_equal(k_nu, np.array([0., 0., 0.]))])
-      psis[i_1, i_2] *= (U_1 + U_2)
+      E_U += U_1 + U_2
    # V term
+   E_V = 0.
    for i_1, i_2 in np.ndindex(psis.shape):
       r = rs[i_2] - rs[i_1]
       V = 2. * math.pi / omega * \
             sum([np.cos(np.dot(k_nu, r)) / np.dot(k_nu, k_nu) for k_nu in ks if \
                not np.array_equal(k_nu, np.array([0., 0., 0.]))])
-      psis[i_1, i_2] *= V
+      E_V += V
+   psis[i_1, i_2] *= (E_U + E_V)
    psis = idft(psis)
    return np.reshape(psis, (64 * N * N, 1))
 
