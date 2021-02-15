@@ -23,38 +23,16 @@ for nu_x in range(-1 * nu_max, nu_max):
       for nu_z in range(-1 * nu_max, nu_max):
          nu = np.array([nu_x, nu_y, nu_z])
          ks.append(2. * math.pi * nu / (omega ** (1. / 3.)))
-         rs.append(nu * ((omega / N)) ** (1. / 3.))
+         rs.append(nu * (omega / (2. * N)) ** (1. / 3.))
 
-rk_prod = []
-for r in rs:
-   row = []
-   for k in ks:
-      row.append(np.dot(r, k))
-   rk_prod.append(row)
-rk_prod_arr = np.array(rk_prod)
+T_mat = sparse.dok_matrix((64 * N * N, 64 * N * N))
+UV_mat = sparse.dok_matrix((64 * N * N, 64 * N * N))
+for i_1, k_1 in enumerate(ks):
+   for i_2, k_2 in enumerate(ks):
+      i = i_1 * 8 * N + i_2
 
-# nu to p
-def dft(psis):
-   exps = np.exp(-1j * np.add.outer(rk_prod_arr, rk_prod_arr))
-   return 1. / N * np.tensordot(psis, exps, axes=([0, 1], [1, 3]))
+      T_mat[i, i] = 0.5 * (np.dot(k_1, k_1) + np.dot(k_2, k_2))
 
-# p to nu
-def idft(psis):
-   exps = np.exp(1j * np.add.outer(rk_prod_arr, rk_prod_arr))
-   return 1. / (64. * N) * np.tensordot(psis, exps, axes=([0, 1], [0, 2]))
-
-# Matrix vector multiply
-def mv(psi):
-   psis = np.reshape(psi, (8 * N, 8 * N))
-   # T term
-   E_T = 0.
-   for i_1, i_2 in np.ndindex(psis.shape):
-      E_T += 1. / 2. * (np.dot(ks[i_1], ks[i_1]) + np.dot(ks[i_2], ks[i_2]))   
-   psis[i_1, i_2] *= E_T   
-   psis = dft(psis)
-   # U term
-   E_U = 0.
-   for i_1, i_2 in np.ndindex(psis.shape):
       U_1 = -4. * math.pi / omega * \
             sum([charge * np.cos(np.dot(k_nu, pos - rs[i_1])) / np.dot(k_nu, k_nu) \
                for charge, pos in zip(nuclei_q, nuclei_pos) for k_nu in ks if \
@@ -63,18 +41,30 @@ def mv(psi):
             sum([charge * np.cos(np.dot(k_nu, pos - rs[i_2])) / np.dot(k_nu, k_nu) \
                for charge, pos in zip(nuclei_q, nuclei_pos) for k_nu in ks if \
                not np.array_equal(k_nu, np.array([0., 0., 0.]))])
-      E_U += U_1 + U_2
-   # V term
-   E_V = 0.
-   for i_1, i_2 in np.ndindex(psis.shape):
-      r = rs[i_2] - rs[i_1]
       V = 2. * math.pi / omega * \
-            sum([np.cos(np.dot(k_nu, r)) / np.dot(k_nu, k_nu) for k_nu in ks if \
+            sum([np.cos(np.dot(k_nu, rs[i_1] - rs[i_2])) / np.dot(k_nu, k_nu) for k_nu in ks if \
                not np.array_equal(k_nu, np.array([0., 0., 0.]))])
-      E_V += V
-   psis[i_1, i_2] *= (E_U + E_V)
-   psis = idft(psis)
+      UV_mat[i, i] = U_1 + U_2 + V
+
+# nu to p
+def dft(psi):
+   psis = np.reshape(psi, (2 * nu_max, 2 * nu_max, 2 * nu_max, 2 * nu_max, 2 * nu_max, 2 * nu_max))
+   psis = 1. / N * np.fft.fftshift(np.fft.fftn(psis))
    return np.reshape(psis, (64 * N * N, 1))
+
+# p to nu
+def idft(psi):
+   psis = np.reshape(psi, (2 * nu_max, 2 * nu_max, 2 * nu_max, 2 * nu_max, 2 * nu_max, 2 * nu_max))
+   psis =  N * np.fft.ifftshift(np.fft.ifftn(psis))
+   return np.reshape(psis, (64 * N * N, 1))
+
+# Matrix vector multiply
+def mv(psi):
+   psis = T_mat.dot(psi)
+   psis = dft(psis)
+   psis = UV_mat.dot(psis)
+   psis = idft(psis)
+   return psis
 
 H = sparse.linalg.LinearOperator((64 * N * N, 64 * N * N), matvec=mv)
 print("diagonalizing", flush=True)
